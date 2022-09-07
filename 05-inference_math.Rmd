@@ -1,0 +1,354 @@
+---
+title: "Inference by Mathematical Analysis"
+author: "Greg Cox"
+date: "2022-09-06"
+output:
+    ioslides_presentation:
+        widescreen: true
+        smaller: true
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(patchwork)
+
+source("DBDA2Eprograms/DBDA2E-utilities.R")
+source("DBDA2Eprograms/BernGrid.R")
+source("DBDA2Eprograms/BernBeta.R")
+
+set.seed(12222)
+```
+
+## Bayes' Rule
+
+Bayes' rule describes how an initial *prior* distribution of credibility over parameters $\theta$ should be reallocated in light of data $D$ to form a *posterior* distribution of credibility over those same parameters.
+
+$$
+\underbrace{p(\theta | D)}_{\text{Posterior}} = \underbrace{p(D | \theta)}_{\text{Likelihood}} \, \underbrace{p(\theta)}_{\text{Prior}} / \underbrace{p(D)}_{\text{Evidence}}
+$$
+
+The "evidence" is the probability of observing data $D$ *marginalized over* all possible values of the model parameters $\theta$.  It is also called the *marginal likelihood*:
+
+$$
+p(D) = \int d \theta^* \, p(D | \theta^*) p (\theta^*)
+$$
+
+Note that it depends on the prior distribution $p(\theta)$!  This tells us that our "model" is not just the likelihood function, but *also* the prior.
+
+The "evidence" is the probability that the model assigns to the observed data $D$.
+
+## What makes Bayes hard
+
+When working with contingency tables, Bayes' rule is not so hard to work out, even if it can involve some tedious arithmetic.
+
+Applying Bayes' rule in most practical settings is difficult because it requires calculating $p(D)$, which in turn requires integrating **over the entire joint set of parameters $\theta$**.
+
+When we only have one or two parameters, this isn't impossible, but realistic models applied to real data may have hundreds of parameters.
+
+Keeping track of the credibility for *every possible combination* quickly becomes impossible, and we will spend much of the next two weeks learning about methods that attempt to circumvent this difficulty.
+
+Today, however, we will see an example where the math is tractable and the scenario is still meaningful.
+
+## Outline
+
+$$
+\underbrace{p(\theta | D)}_{\text{Posterior}} = \underbrace{p(D | \theta)}_{\text{Likelihood}} \, \underbrace{p(\theta)}_{\text{Prior}} / \underbrace{p(D)}_{\text{Evidence}}
+$$
+
+Doing Bayes' rule with math.
+
+1. How to think about the "likelihood" function
+2. Relating prior to posterior
+3. Factors involved in expressing a prior via mathematical function
+4. Influence of likelihood and prior on posterior
+5. What to do with a posterior
+
+## Inferring a binomial probability
+
+We will continue to focus on a situation in which each the sample space for each datum is only two outcomes which are not mathematically related to one another in any way.  Situations like this include
+
+* A coin flip (heads/tails)
+* Lexical decision, recognition memory, visual search (all involve yes/no decisions about whether a stimulus is a "target")
+* Two-alternative forced choice tasks (e.g., which of two items is a target, pick product A or B, same/different)
+* Certain survey items (yes/no questions, agree/disagree)
+
+## Another recognition memory example
+
+Kruschke keeps his example agnostic by focusing on the coin flip, but I'll put some psychological meat on these bones with the following example, based on the **DRM** paradigm, a way of studying "false memory" and used by Deese (1959), Roediger & McDermott (1995).
+
+A participant studies several lists of words.  Each list consists of words related to a common associate.  Afterwards, we present two options: a word the participant studied and the common associate that they did not study.
+
+$$
+\begin{align}
+\left\lbrace \text{bed, night, pillow, blanket,} \ldots \right\rbrace & \rightarrow \left\lbrace \text{pillow - sleep} \right\rbrace \\
+\left\lbrace \text{candy, sugar, taste, tooth,} \ldots \right\rbrace & \rightarrow \left\lbrace \text{sweet - sugar} \right\rbrace
+\end{align}
+$$
+
+The sample space for each trial is therefore $\lbrace \text{correct, incorrect} \rbrace$.
+
+More interestingly, the outcome reflects the relative influence of *gist* (global similarity between a test item and the contents of memory) versus *verbatim* (similarity to a specific item) information when making recognition decisions.
+
+## Bernoulli distribution
+
+We will *model* the outcome of these trials from a specific participant using the **Bernoulli distribution**.
+
+This model has one parameter, $\theta$, which is the probability of choosing the correct (verbatim) item on a specific trial.
+
+The outcome of trial $i$ is denoted $y_i$ and is coded as either $y_i = 1$ (chose the correct verbatim item) or $y_i = 0$ (chose the incorrect gist item).
+
+$$
+p \left(y_i \middle| \theta \right) = \theta^{y_i} \left(1 - \theta \right)^{\left(1 - y_i \right)}
+$$
+
+As noted, the use of 0/1 to code the outcomes of each trial is a mathematical convenience and does *not* assign numerical values to those outcomes.
+
+$$
+p \left(y_i = 1 \middle| \theta \right) = \theta^{1} \left(1 - \theta \right)^{0} = \theta, \quad p \left(y_i = 0 \middle| \theta \right) = \theta^{0} \left(1 - \theta \right)^{1} = 1 - \theta
+$$
+
+## Bernoulli distribution vs. likelihood function
+
+$$
+p \left(y_i \middle| \theta \right) = \theta^{y_i} \left(1 - \theta \right)^{\left(1 - y_i \right)}
+$$
+
+When $\theta$ is assumed to be known or given, the equation above describes the *distribution* of credibility across the two possible outcomes of trial $y_i$.  In this sense, the Bernoulli distribution describes what we believe could happen, given that we believe in a specific value of $\theta$.
+
+When $y_i$ is observed or assumed, the same equation instead describes the *likelihood function* for that datum, conditional on a choice of $\theta$.
+
+```{r out.height = 300, out.width=500}
+plotDF <- expand_grid(y = c(0, 1), theta = seq(0.1, 0.9, length.out = 5)) %>%
+    mutate(p = theta^y * (1 - theta)^(1 - y))
+
+p1 <- plotDF %>%
+    ggplot(aes(x = y, y = p, fill = theta, group = theta)) +
+    geom_col(position = position_dodge(width = 0.1)) +
+    coord_cartesian(ylim = c(0, 1)) +
+    scale_x_continuous(breaks = c(0, 1)) +
+    labs(x = expression(y[i]), y = expression(paste(p, group("(", paste(y[i], "|", theta), ")"))), fill = expression(theta), title = "Bernoulli as distribution")
+
+p2 <- plotDF %>%
+    ggplot(aes(x = theta, y = p, fill = y, group = y)) +
+    geom_col(position = position_dodge(width = 0.1)) +
+    coord_cartesian(ylim = c(0, 1)) +
+    scale_x_continuous(breaks = sort(unique(plotDF$theta))) +
+    labs(x = expression(theta), y = expression(paste(p, group("(", paste(y[i], "|", theta), ")"))), fill = expression(y[i]), title = "Bernoulli as likelihood function")
+
+print(p1 + p2)
+```
+
+## Likelihood for multiple trials
+
+$$
+\begin{align}
+p\left( \left\lbrace y_i \right\rbrace | \theta \right) & = \prod_i p\left(y_i | \theta \right) & \text{By assumption of independence} \\
+ & = \prod_i \theta^{y_i} \left(1 - \theta \right)^{\left(1 - y_i \right)} & \text{From our previous definition} \\
+ & = \theta^{\sum_i y_i} \left(1 - \theta \right)^{\sum_i \left(1 - y_i \right)} & \text{From definition of multiplication} \\
+ & = \theta^{\text{Number correct}} \left(1 - \theta \right)^{\text{Number incorrect}} & \text{Nice!} \\
+ & = \theta^{z} \left(1 - \theta \right)^{N - z} & \begin{matrix} N \text{: total number of trials, } \\ z \text{: number correct trials} \end{matrix}
+\end{align}
+$$
+
+This resembles the *binomial distribution*, which instead of describing a distribution over two possible outcomes, describes the distribution over $N + 1$ possible outcomes, each of which represents a *number* $z$ out of $N$:
+
+$$
+p\left( z \middle| \theta, N \right) = \underbrace{\binom{N}{z} \times}_{\begin{matrix} \text{Number of sequences with }z \\ \text{ successes out of }N\text{ trials} \end{matrix}} \theta^{z} \left(1 - \theta \right)^{N - z}
+$$
+
+## Playing together: Beta prior
+
+$$
+\begin{align}
+\underbrace{p(\theta | D)}_{\text{Posterior}} & = \underbrace{p(D | \theta)}_{\text{Likelihood}} \, \underbrace{p(\theta)}_{\text{Prior}} / \underbrace{p(D)}_{\text{Evidence}} \\
+\underbrace{p \left( \theta \middle| \left\lbrace y_i \right\rbrace \right)}_{?} & = \theta^z \left(1 - \theta \right)^{\left(N - z \right)} \underbrace{p\left( \theta \right)}_{?} / \underbrace{p(D)}_{?}
+\end{align}
+$$
+
+What we are looking for now is a way to express our prior beliefs in terms of a mathematical function.  This function needs to satisfy two properties:
+
+1. For any value of $\theta \in [0, 1]$, the function needs to provide a *probability density* assigned to that value of $\theta$.
+2. It should be possible to express *both* our prior *and* posterior beliefs using the same *form* of function.  This means that the product $p(D | \theta)$ and $p(\theta)$ should have the same *form* as $p(\theta)$ on its own.
+3. The integral $p(D) = \int d\theta p(D | \theta) p(\theta)$ should be tractable analytically.
+
+When prior and posterior can both be expressed using functions that have the same mathematical form regardless of the amount of data observed, then we say the prior is **conjugate** with the chosen likelihood function $p(D | \theta)$.  Literally, the prior "plays well" with the likelihood.
+
+## Playing together: Beta prior
+
+$$
+\begin{align}
+\underbrace{p(\theta | D)}_{\text{Posterior}} & = \underbrace{p(D | \theta)}_{\text{Likelihood}} \, \underbrace{p(\theta)}_{\text{Prior}} / \underbrace{p(D)}_{\text{Evidence}} \\
+\underbrace{p \left( \theta \middle| \left\lbrace y_i \right\rbrace \right)}_{?} & = \theta^z \left(1 - \theta \right)^{\left(N - z \right)} \underbrace{p\left( \theta \right)}_{?} / \underbrace{p(D)}_{?} \\
+ & = \left[ \theta^z \left(1 - \theta \right)^{\left(N - z \right)} \right] \left[ \theta^a \left(1 - \theta \right)^{b} \right] / \underbrace{p(D)}_{?} \\
+ & = \theta^{a + z} \left(1 - \theta \right)^{b + \left(N - z \right)} / \underbrace{p(D)}_{?}
+\end{align}
+$$
+
+We begin by saying that we will express our prior as a product of $\theta^a \left(1 - \theta \right)^b$ where $a$ and $b$ are values we can set called *hyperparameters*.  This makes it possible to directly multiply the prior with the likelihood to obtain a set of terms that have the same *form*.
+
+## Playing together: Beta prior
+
+But what about $p(D)$?  Remember that a probability density function needs to integrate to one over its domain, so we can view $p(D)$ as a **normalizing constant** to ensure that this integral comes up one.
+
+$$
+\begin{align}
+\int d\theta \, p(\theta | D) & = 1 \\
+\int_0^1 d\theta \, \frac{\theta^{a + z} \left(1 - \theta \right)^{b + \left(N - z \right)}}{p(D)} & = 1 \\
+\int_0^1 d\theta \, \theta^{a + z} \left(1 - \theta \right)^{b + \left(N - z \right)} & = p(D) \\
+\frac{\Gamma(a + z + 1) \Gamma(b + \left(N - z \right) + 1)}{\Gamma(a + z + b + \left(N - z \right) + 2)} \underbrace{= \frac{(a + z)! (b + N - z)!}{(a + b + N + 1)!}}_{\text{if }a\text{ and }b\text{ are integers}} & = p(D) \\
+B\left( a + z, b + \left(N - z \right) \right) & = p(D)
+\end{align}
+$$
+
+The result of the integral is the **Beta function**, $B\left( a + z, b + \left(N - z \right) \right)$.  Notice that if we have observed no data, such that $z = N = 0$, we have $B(a, b)$.
+
+## Playing together: Beta prior
+
+This means we can express the normalizing constant for the *prior* (with no data) using the same form:
+
+$$
+\begin{align}
+p \left( \theta \middle| a, b \right) & = \theta^{\left(a - 1 \right)} \left(1 - \theta \right)^{\left(b - 1 \right)} / B(a, b) & \text{Prior} \\
+p \left( \left\lbrace y_i \right\rbrace \middle| \theta \right) & = \theta^{z} \left(1 - \theta \right)^{N - z} & \text{Likelihood} \\
+p \left( \theta \middle| \left\lbrace y_i \right\rbrace, a, b \right) & = \theta^{\left(z + a - 1 \right)} \left(1 - \theta \right)^{\left(N - z + b - 1 \right)} / B(z + a, N - z + b) & \text{Posterior} \\
+\end{align}
+$$
+
+The beta function is the normalizing constant for the **beta distribution**, which is the *conjugate prior* to the Bernoulli likelihood function.
+
+But how to decide on the "hyperparameters" $a$ and $b$?  Notice that $a$ plays the same role as the number of correct trials (or heads etc.) and $b$ plays the same role as the number of incorrect trials (or tails etc.).
+
+We can think of $a$ and $b$ as *previously observed trials* in either an identical *or similar* setting.  We can express our prior certainty in terms of the "number of trials" that contribute to our prior beliefs.
+
+## Setting a Beta Prior
+
+```{r}
+sidebarLayout(
+    sidebarPanel(
+        numericInput("A", 'Num. prior correct', 1, min = 0),
+        numericInput("B", 'Num. prior incorrect', 1, min = 0),
+        numericInput("kappa", "Num. prior trials", 2, min = 0),
+        numericInput("mu", "Prior mean", 0.5, min = 0, max = 1, step = 0.01),
+        numericInput("omega", "Prior mode", 0.5, min = 0, max = 1, step = 0.01),
+        numericInput("sigma", "Prior SD", 0.5 / sqrt(3), min = 0, step = 0.01),
+        width = 3
+    ),
+    mainPanel(
+        renderPlot({
+            new_mu <- input$A / (input$A + input$B)
+            new_omega <- (input$A - 1) / (input$A + input$B - 2)
+            new_kappa <- input$A + input$B
+            new_sigma <- sqrt(new_mu * (1 - new_mu) / (input$A + input$B + 1))
+            
+            updateNumericInput(inputId = "mu", value = new_mu)
+            updateNumericInput(inputId = "sigma", value = new_sigma)
+            updateNumericInput(inputId = "omega", value = new_omega)
+            updateNumericInput(inputId = "kappa", value = new_kappa)
+            
+            expand_grid(x = seq(0, 1, length.out = 201)) %>%
+                mutate(p = dbeta(x, input$A, input$B)) %>%
+                ggplot(aes(x = x, y = p)) +
+                geom_area(alpha = 0.5, color = "black") +
+                labs(x = expression(theta), y = expression(p(theta)))
+        }),
+        width = 6
+    )
+)
+```
+
+## Considerations in prior setting
+
+* What if we have little basis for any expectations?
+* What if we think both gist and verbatim information can lead to recognition, but don't have any reason to expect one to contribute more than the other?
+* What if we have prior data suggesting that this participant's age group tends to make a lot of semantic confusions?
+
+## From Prior to Posterior
+
+$$
+\begin{align}
+p \left( \theta \middle| a, b \right) & = \theta^{\left(a - 1 \right)} \left(1 - \theta \right)^{\left(b - 1 \right)} / B(a, b) & \text{Prior: beta} \left( \theta \middle| a, b \right) \\
+p \left( \left\lbrace y_i \right\rbrace \middle| \theta \right) & = \theta^{z} \left(1 - \theta \right)^{N - z} & \text{Likelihood} \\
+p \left( \theta \middle| \left\lbrace y_i \right\rbrace, a, b \right) & = \theta^{\left(z + a - 1 \right)} \left(1 - \theta \right)^{\left(N - z + b - 1 \right)} / B(z + a, N - z + b) & \begin{matrix} \text{Posterior:} \\ \text{beta} \left( \theta \middle| z + a, N - z + b \right) \end{matrix}
+\end{align}
+$$
+
+The *mean* of $\text{beta}\left( \theta \middle| \alpha, \beta \right)$ distribution is $\frac{\alpha}{\alpha + \beta}$.
+
+$$
+\begin{align}
+\underbrace{\frac{a + z}{a + b + N}}_{\text{Posterior mean}} & = \frac{a}{a + b + N} + \frac{z}{a + b + N} = a \frac{1}{a + b + N} + z\frac{1}{a + b + N} \\
+ & = a \frac{a + b}{a + b}\frac{1}{a + b + N} + z \frac{N}{N} \frac{1}{a + b + N} \\
+ & = \underbrace{\frac{a}{a + b}}_{\text{prior mean}} \underbrace{\frac{a + b}{a + b + N}}_{\text{prior weight}} + \underbrace{\frac{z}{N}}_{\text{data mean}} \underbrace{\frac{N}{a + b + N}}_{\text{data weight}}
+\end{align}
+$$
+
+Our posterior shifts with each new observation and is a compromise between the prior and the data.
+
+## Visualizing inference
+
+```{r}
+sidebarLayout(
+    sidebarPanel(
+        numericInput("z", 'Num. correct', 1, min = 0),
+        numericInput("nMinusZ", 'Num. incorrect', 0, min = 0),
+        numericInput("a", "Prior correct", 1, min = 0),
+        numericInput("b", "Prior incorrect", 1, min = 0),
+        width = 3
+    ),
+    mainPanel(
+        renderPlot({
+            Prior = c(input$a, input$b)       # Specify Prior as vector with the two shape parameters.
+            
+            Data = c(rep(0, input$nMinusZ),rep(1, input$z))  # Convert N and z into vector of 0's and 1's.
+
+            posterior = BernBeta( priorBetaAB=Prior, Data=Data , plotType="Bars" , 
+                      showCentTend="Mode" , showHDI=TRUE , showpD=FALSE , ROPE = c(0, 0.5))
+        }, height=500),
+        width=5
+    )
+)
+```
+
+## Beauty and sex ratio
+
+Based on prior research, we believe that the proportion of female births (out of male and female births) is around 48.5%.  To the extent that this proportion varies, it is probably within one percent.
+
+1. Express these prior beliefs as a Beta distribution.
+2. Imagine that a study was done in which 52% of children of people classified as "beautiful" were female.
+3. How big a sample would we need for us to believe that "beautiful" people have more female than male children?
+
+*This situation mimics the---at best questionable---work of Satoshi Kanazawa.*
+
+<!-- ## What do we do with a posterior? -->
+
+<!-- * What values of $\theta$ are most believable? -->
+<!--     * Characterizes our current knowledge, based on prior and available evidence. -->
+<!--     * Can be used to decide whether specific values (e.g., values near $\theta = 0.5$) should or should not be considered credible. -->
+<!-- * What are the possible outcomes of the *next* trial (next flip, next game, next question, etc.)? -->
+<!--     * This is the **posterior _predictive_ distribution**, since it represents what we would *predict* based on our current (posterior) distribution of belief. -->
+<!--     * For the beta distribution, all we need for this is its mean. -->
+
+<!-- ## Posterior predictive -->
+
+<!-- $$ -->
+<!-- \begin{align} -->
+<!-- & p\left( y^* = 1 \middle| \left\lbrace y_i \right\rbrace, a, b \right) = \int_0^1 d \theta \, p \left( y^* = 1 \middle| \theta \right) p\left( \theta \middle| \left\lbrace y_i \right\rbrace, a, b \right) & \text{Posterior predictive} \\ -->
+<!-- & = \int_0^1 d \theta \underbrace{\theta}_{= p \left( y^* = 1 \middle| \theta \right)} \underbrace{\frac{\theta^{\left(z + a - 1 \right)} \left(1 - \theta \right)^{\left(N - z + b - 1 \right)}}{B(z + a, N - z + b)}}_{= p\left( \theta \middle| \left\lbrace y_i \right\rbrace, a, b \right)} & \text{Definitions} \\ -->
+<!-- & = \frac{1}{B(z + a, N - z + b)} \int_0^1 d \theta \, \theta^{\left(z + a \right)} \left(1 - \theta \right)^{\left(N - z + b - 1 \right)} & \text{Rearranging} \\ -->
+<!-- & = \frac{B(z + a + 1, N - z + b)}{B(z + a, N - z + b)} & \begin{matrix}\text{Definition of} \\ \text{Beta function} \end{matrix} \\ -->
+<!-- & = \left[ \frac{\Gamma(z + a) \Gamma(N - z + b - 1)}{\Gamma(a + b + N)} \right] \left[ \frac{\Gamma(a + b + N - 1)}{\Gamma(z + a - 1) \Gamma(N - z + b - 1)} \right] & \begin{matrix}\text{Definition of} \\ \text{Beta function} \end{matrix} \\ -->
+<!-- & = \left[ \frac{\Gamma(z + a)}{\Gamma(z + a - 1)} \right] \left[ \frac{\Gamma(a + b + N - 1)}{\Gamma(a + b + N)} \right] = \left(z + a \right) \left(\frac{1}{a + b + N} \right) & \begin{matrix}\text{Property of} \\ \text{Gamma function} \end{matrix} \\ -->
+<!-- & = \frac{z + a}{a + b + N} & \text{Posterior mean} -->
+<!-- \end{align} -->
+<!-- $$ -->
+
+## Summary
+
+The beta distribution is the **conjugate prior** to the Bernoulli likelihood function.  This enables us to express our posterior beliefs *analytically* in terms of the two *hyperparameters* of the beta distribution.
+
+Only in rare circumstances can we do this, requiring computers to approximate the kind of math we just did.  The approximation methods we use fall under the general heading of **Markov Chain Monte Carlo (MCMC)** methods.
+
+Also, we can't always express our prior knowledge in a form that the beta distribution can take.
